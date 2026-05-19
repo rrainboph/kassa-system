@@ -1,10 +1,24 @@
 import { useEffect, useState } from "react"
 
-function App() {
+import {
 
-  // =========================================
-  // STATES
-  // =========================================
+  collection,
+
+  addDoc,
+
+  deleteDoc,
+
+  doc,
+
+  updateDoc,
+
+  onSnapshot
+
+} from "firebase/firestore"
+
+import { db } from "./firebase"
+
+function App() {
 
   const [amount, setAmount] = useState("")
   const [comment, setComment] = useState("")
@@ -22,52 +36,40 @@ function App() {
   const [editingId, setEditingId] = useState(null)
 
   // =========================================
-  // LOAD
+  // REALTIME FIREBASE
   // =========================================
 
   useEffect(() => {
 
-    const saved = localStorage.getItem("cash-data")
+    const unsub = onSnapshot(
 
-    if (saved) {
+      collection(db, "records"),
 
-      setRecords(JSON.parse(saved))
+      (snapshot) => {
 
-    }
+        const list = snapshot.docs.map(doc => ({
 
-  }, [])
+          id: doc.id,
 
-  // =========================================
-  // SAVE
-  // =========================================
+          ...doc.data()
 
-  useEffect(() => {
+        }))
 
-    localStorage.setItem(
-      "cash-data",
-      JSON.stringify(records)
+        setRecords(list)
+
+      }
+
     )
 
-  }, [records])
+    return () => unsub()
 
-  // =========================================
-  // CLEAR
-  // =========================================
-
-  function clearInputs() {
-
-    setAmount("")
-    setComment("")
-    setCategory("Закуп")
-    setOperation("+")
-
-  }
+  }, [])
 
   // =========================================
   // ADD / SAVE
   // =========================================
 
-  function addOrSaveRecord() {
+  async function addOrSaveRecord() {
 
     if (!amount) return
 
@@ -89,31 +91,23 @@ function App() {
 
     if (editingId) {
 
-      const updated = records.map(item => {
+      await updateDoc(
 
-        if (item.id === editingId) {
+        doc(db, "records", editingId),
 
-          return {
+        {
 
-            ...item,
+          amount: Number(amount),
 
-            amount: Number(amount),
+          comment,
 
-            comment,
+          category,
 
-            category,
-
-            type: finalType
-
-          }
+          type: finalType
 
         }
 
-        return item
-
-      })
-
-      setRecords(updated)
+      )
 
       setEditingId(null)
 
@@ -123,52 +117,44 @@ function App() {
 
     else {
 
-      const newRecord = {
+      await addDoc(
 
-        id: Date.now(),
+        collection(db, "records"),
 
-        amount: Number(amount),
+        {
 
-        comment,
+          amount: Number(amount),
 
-        category,
+          comment,
 
-        type: finalType,
+          category,
 
-        date: selectedDate,
+          type: finalType,
 
-        time: new Date().toLocaleTimeString(),
+          date: selectedDate,
 
-        active: true
+          time: new Date().toLocaleTimeString(),
 
-      }
+          active: true
 
-      setRecords([
-        newRecord,
-        ...records
-      ])
+        }
+
+      )
 
     }
 
-    clearInputs()
+    setAmount("")
+    setComment("")
   }
 
   // =========================================
   // DELETE
   // =========================================
 
-  function deleteRecord(id) {
+  async function deleteRecord(id) {
 
-    const confirmDelete = confirm(
-      "Удалить запись?"
-    )
-
-    if (!confirmDelete) return
-
-    setRecords(
-      records.filter(
-        item => item.id !== id
-      )
+    await deleteDoc(
+      doc(db, "records", id)
     )
 
   }
@@ -189,41 +175,26 @@ function App() {
 
     setOperation(item.type)
 
-    window.scrollTo({
-
-      top: 0,
-
-      behavior: "smooth"
-
-    })
-
   }
 
   // =========================================
   // TOGGLE
   // =========================================
 
-  function toggleRecord(id) {
+  async function toggleRecord(item) {
 
-    const updated = records.map(item => {
+    await updateDoc(
 
-      if (item.id === id) {
+      doc(db, "records", item.id),
 
-        return {
+      {
 
-          ...item,
-
-          active: !item.active
-
-        }
+        active: !item.active
 
       }
 
-      return item
+    )
 
-    })
-
-    setRecords(updated)
   }
 
   // =========================================
@@ -278,10 +249,6 @@ function App() {
 
   })
 
-  // =========================================
-  // FINAL
-  // =========================================
-
   const BASE_CASH = 20000
 
   const finalTotal =
@@ -292,56 +259,44 @@ function App() {
     + totalExpensePlus
     - totalExpenseMinus
 
-  // =========================================
-  // UI
-  // =========================================
-
   return (
 
     <div className="min-h-screen bg-zinc-950 text-white p-4 md:p-8">
 
       <div className="max-w-7xl mx-auto">
 
-        {/* HEADER */}
+        <h1 className="text-5xl font-black mb-2">
 
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5 mb-10">
+          KASSA SYSTEM
 
-          <div>
+        </h1>
 
-            <h1 className="text-4xl md:text-6xl font-black tracking-tight">
+        <p className="text-zinc-400 mb-8">
 
-              KASSA SYSTEM
+          Cloud Cash Manager
 
-            </h1>
+        </p>
 
-            <p className="text-zinc-400 mt-2 text-lg">
+        {/* DATE */}
 
-              Cash accounting manager
+        <input
+          type="date"
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value)}
+          className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 mb-8"
+        />
 
-            </p>
+        {/* TOTALS */}
 
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
 
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 outline-none text-lg"
-          />
-
-        </div>
-
-        {/* SUMMARY */}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mb-10">
-
-          <div className="bg-zinc-900 rounded-3xl p-6 border border-zinc-800">
+          <div className="bg-zinc-900 p-5 rounded-3xl">
 
             <p className="text-zinc-400">
               Закуп
             </p>
 
-            <h2 className="text-4xl font-black text-green-400 mt-3">
+            <h2 className="text-3xl font-black text-green-400">
 
               +{totalBuy}
 
@@ -349,13 +304,13 @@ function App() {
 
           </div>
 
-          <div className="bg-zinc-900 rounded-3xl p-6 border border-zinc-800">
+          <div className="bg-zinc-900 p-5 rounded-3xl">
 
             <p className="text-zinc-400">
               Выручка
             </p>
 
-            <h2 className="text-4xl font-black text-red-400 mt-3">
+            <h2 className="text-3xl font-black text-red-400">
 
               -{totalProfit}
 
@@ -363,39 +318,27 @@ function App() {
 
           </div>
 
-          <div className="bg-zinc-900 rounded-3xl p-6 border border-zinc-800">
+          <div className="bg-zinc-900 p-5 rounded-3xl">
 
             <p className="text-zinc-400">
               Расход
             </p>
 
-            <h2 className="text-3xl font-black mt-3">
+            <h2 className="text-2xl font-black">
 
-              <span className="text-green-400">
-
-                +{totalExpensePlus}
-
-              </span>
-
-              {" / "}
-
-              <span className="text-red-400">
-
-                -{totalExpenseMinus}
-
-              </span>
+              +{totalExpensePlus} / -{totalExpenseMinus}
 
             </h2>
 
           </div>
 
-          <div className="bg-white text-black rounded-3xl p-6">
+          <div className="bg-white text-black p-5 rounded-3xl">
 
-            <p className="opacity-70">
-              Итоговая касса
+            <p>
+              Итог
             </p>
 
-            <h2 className="text-5xl font-black mt-3">
+            <h2 className="text-4xl font-black">
 
               {finalTotal}
 
@@ -407,14 +350,14 @@ function App() {
 
         {/* INPUTS */}
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-10">
+        <div className="grid md:grid-cols-5 gap-4 mb-8">
 
           <input
             type="number"
             placeholder="Сумма"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 outline-none text-lg"
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4"
           />
 
           <input
@@ -422,13 +365,13 @@ function App() {
             placeholder="Комментарий"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 outline-none text-lg"
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4"
           />
 
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 outline-none text-lg"
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4"
           >
 
             <option>Закуп</option>
@@ -443,7 +386,7 @@ function App() {
             value={operation}
             onChange={(e) => setOperation(e.target.value)}
             disabled={category !== "Расход"}
-            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 outline-none text-lg disabled:opacity-40"
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4"
           >
 
             <option value="+">+</option>
@@ -454,7 +397,7 @@ function App() {
 
           <button
             onClick={addOrSaveRecord}
-            className="bg-white hover:bg-zinc-200 transition text-black rounded-2xl font-black text-lg"
+            className="bg-white text-black rounded-2xl font-black"
           >
 
             {editingId
@@ -467,176 +410,79 @@ function App() {
 
         {/* TABLE */}
 
-        <div className="bg-zinc-900/80 backdrop-blur-xl rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl">
+        <div className="bg-zinc-900 rounded-3xl overflow-hidden">
 
-          <div className="overflow-x-auto">
+          <div className="grid grid-cols-6 bg-zinc-800 p-4 font-bold">
 
-            <div className="min-w-[950px]">
+            <div>Комментарий</div>
 
-              {/* HEADER */}
+            <div>Категория</div>
 
-              <div className="grid grid-cols-6 bg-zinc-800 text-zinc-300 p-5 font-bold uppercase text-sm tracking-wide">
+            <div>Тип</div>
 
-                <div>Комментарий</div>
+            <div>Сумма</div>
 
-                <div>Категория</div>
+            <div>Время</div>
 
-                <div>Тип</div>
+            <div>Действия</div>
 
-                <div>Сумма</div>
+          </div>
 
-                <div>Время</div>
+          {filteredRecords.map(item => (
 
-                <div className="text-right">
-                  Действия
-                </div>
+            <div
+              key={item.id}
+              className={`grid grid-cols-6 p-4 border-t border-zinc-800 ${
+                !item.active
+                  ? "opacity-40"
+                  : ""
+              }`}
+            >
+
+              <div className={!item.active ? "line-through" : ""}>
+
+                {item.comment}
 
               </div>
 
-              {/* ROWS */}
+              <div>{item.category}</div>
 
-              {filteredRecords.map((item) => (
+              <div>{item.type}</div>
 
-                <div
-                  key={item.id}
-                  className={`grid grid-cols-6 items-center p-5 border-t border-zinc-800 transition-all hover:bg-zinc-800/50 ${
-                    !item.active
-                      ? "opacity-40"
-                      : ""
-                  }`}
+              <div>{item.amount}</div>
+
+              <div>{item.time}</div>
+
+              <div className="flex gap-2">
+
+                <button
+                  onClick={() => editRecord(item)}
+                  className="bg-blue-500 px-3 py-1 rounded-xl"
+                >
+                  Edit
+                </button>
+
+                <button
+                  onClick={() => toggleRecord(item)}
+                  className="bg-yellow-500 text-black px-3 py-1 rounded-xl"
                 >
 
-                  {/* COMMENT */}
+                  {item.active ? "OFF" : "ON"}
 
-                  <div
-                    className={`font-semibold text-base ${
-                      !item.active
-                        ? "line-through"
-                        : ""
-                    }`}
-                  >
+                </button>
 
-                    {item.comment || "Без комментария"}
+                <button
+                  onClick={() => deleteRecord(item.id)}
+                  className="bg-red-500 px-3 py-1 rounded-xl"
+                >
+                  X
+                </button>
 
-                  </div>
-
-                  {/* CATEGORY */}
-
-                  <div>
-
-                    <span
-                      className={`px-4 py-2 rounded-2xl text-sm font-bold ${
-                        item.category === "Закуп"
-                          ? "bg-green-500/20 text-green-400 border border-green-500/30"
-
-                          : item.category === "Выручка"
-                          ? "bg-red-500/20 text-red-400 border border-red-500/30"
-
-                          : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                      }`}
-                    >
-
-                      {item.category}
-
-                    </span>
-
-                  </div>
-
-                  {/* TYPE */}
-
-                  <div
-                    className={`text-2xl font-black ${
-                      item.type === "+"
-                        ? "text-green-400"
-                        : "text-red-400"
-                    }`}
-                  >
-
-                    {item.type}
-
-                  </div>
-
-                  {/* AMOUNT */}
-
-                  <div
-                    className={`text-2xl font-black ${
-                      item.type === "+"
-                        ? "text-green-400"
-                        : "text-red-400"
-                    } ${
-                      !item.active
-                        ? "line-through"
-                        : ""
-                    }`}
-                  >
-
-                    {item.amount}
-
-                  </div>
-
-                  {/* TIME */}
-
-                  <div className="text-zinc-400">
-
-                    {item.time}
-
-                  </div>
-
-                  {/* ACTIONS */}
-
-                  <div className="flex justify-end gap-2">
-
-                    <button
-                      onClick={() => editRecord(item)}
-                      className="bg-blue-500 hover:bg-blue-400 transition px-4 py-2 rounded-2xl text-sm font-bold"
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      onClick={() => toggleRecord(item.id)}
-                      className={`px-4 py-2 rounded-2xl text-sm font-black transition ${
-                        item.active
-                          ? "bg-yellow-500 text-black hover:bg-yellow-400"
-
-                          : "bg-green-500 text-black hover:bg-green-400"
-                      }`}
-                    >
-
-                      {item.active
-                        ? "OFF"
-                        : "ON"}
-
-                    </button>
-
-                    <button
-                      onClick={() => deleteRecord(item.id)}
-                      className="bg-red-500 hover:bg-red-400 transition px-4 py-2 rounded-2xl text-sm font-black"
-                    >
-                      X
-                    </button>
-
-                  </div>
-
-                </div>
-
-              ))}
-
-              {/* EMPTY */}
-
-              {filteredRecords.length === 0 && (
-
-                <div className="p-12 text-center text-zinc-500 text-lg">
-
-                  Нет записей за эту дату
-
-                </div>
-
-              )}
+              </div>
 
             </div>
 
-          </div>
+          ))}
 
         </div>
 
