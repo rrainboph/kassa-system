@@ -15,14 +15,23 @@ function App() {
 
   const [amount, setAmount] = useState("")
   const [comment, setComment] = useState("")
+
   const [category, setCategory] = useState("Закуп")
   const [operation, setOperation] = useState("+")
+
   const [records, setRecords] = useState([])
+
   const [editingId, setEditingId] = useState(null)
 
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   )
+
+  // =========================================
+  // FILTER CATEGORY
+  // =========================================
+
+  const [filterCategory, setFilterCategory] = useState("Все")
 
   // =========================================
   // FIREBASE REALTIME
@@ -151,12 +160,21 @@ function App() {
   }
 
   // =========================================
-  // FILTER
+  // FILTER RECORDS
   // =========================================
 
-  const filteredRecords = records.filter(
-    item => item.date === selectedDate
-  )
+  const filteredRecords = records.filter(item => {
+
+    const dateMatch = item.date === selectedDate
+
+    const categoryMatch =
+      filterCategory === "Все"
+        ? true
+        : item.category === filterCategory
+
+    return dateMatch && categoryMatch
+
+  })
 
   // =========================================
   // TOTALS
@@ -167,7 +185,9 @@ function App() {
   let totalExpensePlus = 0
   let totalExpenseMinus = 0
 
-  filteredRecords.forEach(item => {
+  records.forEach(item => {
+
+    if (item.date !== selectedDate) return
 
     if (!item.active) return
 
@@ -224,12 +244,31 @@ function App() {
 
         {/* DATE */}
 
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 mb-6 w-full md:w-auto"
-        />
+        <div className="flex flex-col md:flex-row gap-4 mb-6">
+
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4"
+          />
+
+          {/* FILTER */}
+
+          <select
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4"
+          >
+
+            <option>Все</option>
+            <option>Закуп</option>
+            <option>Выручка</option>
+            <option>Расход</option>
+
+          </select>
+
+        </div>
 
         {/* TOTALS */}
 
