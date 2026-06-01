@@ -23,10 +23,6 @@ function App() {
 
   const [editingId, setEditingId] = useState(null)
 
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0]
-  )
-
   // =========================================
   // FILTER CATEGORY
   // =========================================
@@ -104,7 +100,7 @@ function App() {
           comment,
           category,
           type: finalType,
-          date: selectedDate,
+          date: new Date().toLocaleDateString("ru-RU"),
           time: new Date().toLocaleTimeString(),
           active: true
         }
@@ -163,18 +159,13 @@ function App() {
   // FILTER RECORDS
   // =========================================
 
-  const filteredRecords = records.filter(item => {
-
-    const dateMatch = item.date === selectedDate
-
-    const categoryMatch =
-      filterCategory === "Все"
-        ? true
-        : item.category === filterCategory
-
-    return dateMatch && categoryMatch
-
-  })
+ const filteredRecords = records
+  .filter(item =>
+    filterCategory === "Все"
+      ? true
+      : item.category === filterCategory
+  )
+  .reverse()
 
   // =========================================
   // TOTALS
@@ -186,8 +177,6 @@ function App() {
   let totalExpenseMinus = 0
 
   records.forEach(item => {
-
-    if (item.date !== selectedDate) return
 
     if (!item.active) return
 
@@ -245,13 +234,6 @@ function App() {
         {/* DATE */}
 
         <div className="flex flex-col md:flex-row gap-4 mb-6">
-
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4"
-          />
 
           {/* FILTER */}
 
