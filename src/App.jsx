@@ -172,7 +172,26 @@ function App() {
       ? true
       : item.category === filterCategory
   )
-  .reverse()
+  .sort((a, b) => {
+
+    const dateA = (a.date || "01.01").split(".")
+    const dateB = (b.date || "01.01").split(".")
+
+    const fullA = new Date(
+      2026,
+      Number(dateA[1]) - 1,
+      Number(dateA[0])
+    )
+
+    const fullB = new Date(
+      2026,
+      Number(dateB[1]) - 1,
+      Number(dateB[0])
+    )
+
+    return fullB - fullA
+
+  })
 
   // =========================================
   // TOTALS
