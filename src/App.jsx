@@ -15,6 +15,7 @@ function App() {
 
   const [amount, setAmount] = useState("")
   const [comment, setComment] = useState("")
+  const [recordDate, setRecordDate] = useState("")
 
   const [category, setCategory] = useState("Закуп")
   const [operation, setOperation] = useState("+")
@@ -100,7 +101,12 @@ function App() {
           comment,
           category,
           type: finalType,
-          date: new Date().toLocaleDateString("ru-RU"),
+          date:
+              recordDate ||
+              new Date().toLocaleDateString("ru-RU", {
+                day: "2-digit",
+                month: "2-digit"
+              }),
           time: new Date().toLocaleTimeString(),
           active: true
         }
@@ -110,6 +116,7 @@ function App() {
 
     setAmount("")
     setComment("")
+    setRecordDate("")
 
   }
 
@@ -316,13 +323,21 @@ function App() {
 
         {/* INPUTS */}
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
 
           <input
             type="number"
             placeholder="Сумма"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4"
+          />
+
+          <input
+            type="text"
+            placeholder="Дата (05.06)"
+            value={recordDate}
+            onChange={(e) => setRecordDate(e.target.value)}
             className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4"
           />
 
@@ -385,7 +400,7 @@ function App() {
               <div>Категория</div>
               <div>Тип</div>
               <div>Сумма</div>
-              <div>Время</div>
+              <div>Дата / Время</div>
               <div>Действия</div>
 
             </div>
@@ -415,7 +430,12 @@ function App() {
 
                 <div>{item.amount}</div>
 
-                <div>{item.time}</div>
+                <div>
+                    <div>{item.date}</div>
+                    <div className="text-xs text-zinc-400">
+                      {item.time}
+                    </div>
+                </div>
 
                 <div className="flex gap-2">
 
