@@ -19,6 +19,9 @@ function App() {
 
   const [records, setRecords] = useState([])
   const [editingId, setEditingId] = useState(null)
+  
+  // Состояние для хранения ID записи, которую хотим удалить
+  const [deletingId, setDeletingId] = useState(null)
 
   // =========================================
   // FILTER CATEGORY
@@ -59,7 +62,6 @@ function App() {
 
     // EDIT
     if (editingId) {
-      // Находим текущую запись, чтобы сохранить её оригинальные дату и время
       const currentItem = records.find(r => r.id === editingId)
 
       await updateDoc(
@@ -69,7 +71,6 @@ function App() {
           comment,
           category,
           type: finalType,
-          // Если пользователь ввел новую дату в инпут — берем её, иначе оставляем старую
           date:
             recordDate !== ""
               ? recordDate
@@ -104,12 +105,12 @@ function App() {
   }
 
   // =========================================
-  // DELETE
+  // DELETE (Подтверждение)
   // =========================================
-  async function deleteRecord(id) {
-    await deleteDoc(
-      doc(db, "records", id)
-    )
+  async function confirmDelete() {
+    if (!deletingId) return
+    await deleteDoc(doc(db, "records", deletingId))
+    setDeletingId(null)
   }
 
   // =========================================
@@ -129,11 +130,11 @@ function App() {
   // =========================================
   function editRecord(item) {
     setEditingId(item.id)
-    setAmount(item.amount.toString()) // Преобразуем в строку для корректной работы инпута
+    setAmount(item.amount.toString())
     setComment(item.comment || "")
     setCategory(item.category)
     setOperation(item.type)
-    setRecordDate(item.date || "") // Заполняем поле даты для возможности редактирования
+    setRecordDate(item.date || "")
   }
 
   // =========================================
@@ -150,7 +151,7 @@ function App() {
     })
 
   // =========================================
-  // TOTALS (Оставлено по твоей логике)
+  // TOTALS
   // =========================================
   let totalBuy = 0
   let totalProfit = 0
@@ -336,8 +337,9 @@ function App() {
                     {item.active ? "OFF" : "ON"}
                   </button>
 
+                  {/* Вызываем появление модалки, передавая ID */}
                   <button
-                    onClick={() => deleteRecord(item.id)}
+                    onClick={() => setDeletingId(item.id)}
                     className="bg-red-500 px-3 py-1 rounded-xl"
                   >
                     X
@@ -350,6 +352,32 @@ function App() {
         </div>
 
       </div>
+
+      {/* МОДАЛЬНОЕ ОКНО ПОДТВЕРЖДЕНИЯ */}
+      {deletingId && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl">
+            <h3 className="text-xl font-black mb-2">Удалить запись?</h3>
+            <p className="text-zinc-400 text-sm mb-6">Это действие нельзя будет отменить.</p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeletingId(null)}
+                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 rounded-2xl transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-2xl transition-colors"
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
