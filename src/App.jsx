@@ -185,6 +185,9 @@ function App() {
     + totalExpensePlus
     - totalExpenseMinus
 
+  // Поиск конкретной записи, выбранной для удаления
+  const recordToDelete = records.find(r => r.id === deletingId)
+
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-zinc-950 text-white px-3 md:px-6 py-4">
       <div className="w-full max-w-7xl mx-auto">
@@ -337,7 +340,6 @@ function App() {
                     {item.active ? "OFF" : "ON"}
                   </button>
 
-                  {/* Вызываем появление модалки, передавая ID */}
                   <button
                     onClick={() => setDeletingId(item.id)}
                     className="bg-red-500 px-3 py-1 rounded-xl"
@@ -353,12 +355,34 @@ function App() {
 
       </div>
 
-      {/* МОДАЛЬНОЕ ОКНО ПОДТВЕРЖДЕНИЯ */}
+      {/* МОДАЛЬНОЕ ОКНО ПОДТВЕРЖДЕНИЯ С ДЕТАЛЯМИ ЗАПИСИ */}
       {deletingId && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl">
             <h3 className="text-xl font-black mb-2">Удалить запись?</h3>
-            <p className="text-zinc-400 text-sm mb-6">Это действие нельзя будет отменить.</p>
+
+            {recordToDelete && (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 my-4 text-left">
+                <div className="font-bold text-white text-lg">
+                  {recordToDelete.comment || "Без комментария"}
+                </div>
+                <div className="flex justify-between items-center mt-2 text-sm text-zinc-400">
+                  <span>Категория: <strong className="text-zinc-200">{recordToDelete.category}</strong></span>
+                  <span>Сумма: <strong className="text-white">{recordToDelete.amount}</strong></span>
+                </div>
+                {recordToDelete.date && (
+                  <div className="text-xs text-zinc-500 mt-2">
+                    Дата: {new Date(recordToDelete.date).toLocaleDateString("ru-RU", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric"
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <p className="text-zinc-400 text-sm mb-6">Вы уверены, что хотите её удалить?</p>
             
             <div className="flex gap-3">
               <button
