@@ -116,6 +116,7 @@ export default function AuditHistory() {
         {filtered.map(log => {
           const actor = getEmployeeByUid(log.actorUid)
           const date = log.createdAt?.toDate?.()
+          const deletedRecord = ["trash", "purge"].includes(log.action) ? log.before : null
           const changes = Object.keys(fields).filter(key =>
             log.before?.[key] !== log.after?.[key]
           )
@@ -129,6 +130,15 @@ export default function AuditHistory() {
                   <p className="text-sm text-zinc-300">
                     {names[log.action] || log.action}
                   </p>
+                  {deletedRecord && (
+                    <div className="text-sm text-zinc-200 mt-2 space-y-1">
+                      <p><strong>Сумма:</strong> {display(deletedRecord.amount)}</p>
+                      <p><strong>Категория:</strong> {display(deletedRecord.category)}</p>
+                      <p><strong>Тип:</strong> {display(deletedRecord.type)}</p>
+                      <p><strong>Комментарий:</strong> {display(deletedRecord.comment)}</p>
+                      <p><strong>Дата записи:</strong> {display(deletedRecord.date)} {display(deletedRecord.time) === "—" ? "" : display(deletedRecord.time)}</p>
+                    </div>
+                  )}
                 </div>
                 <span className="text-xs text-zinc-400">
                   {date?.toLocaleTimeString("ru-RU", {
