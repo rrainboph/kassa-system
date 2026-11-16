@@ -1,15 +1,39 @@
 import { useEffect, useState } from "react"
+import { collection, onSnapshot } from "firebase/firestore"
+import { signOut } from "firebase/auth"
+import { auth, db } from "./firebase"
+import AuditHistory from "./AuditHistory"
 import {
-  collection,
-  addDoc,
-  deleteDoc,
-  doc,
-  updateDoc,
-  onSnapshot
-} from "firebase/firestore"
-import { db } from "./firebase"
+  addRecordWithHistory,
+  updateRecordWithHistory,
+  permanentlyDeleteWithHistory,
+} from "./recordHistory"
 
-function App() {
+function App({ currentEmployee }) {
+  const isOwner = currentEmployee?.role === "owner"
+  const [showHistory, setShowHistory] = useState(false)
+  const canModify = (item) => Boolean(currentEmployee) && !item.deleted
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+
+  async function runAction(callback) {
+    if (busy) return
+    setBusy(true)
+    setError("")
+    try {
+      await callback()
+    } catch (err) {
+      setError(err?.message || "Не удалось сохранить изменение.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function localDate() {
+    const d = new Date()
+    const pad = (n) => String(n).padStart(2, "0")
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
+  }
   const [amount, setAmount] = useState("")
   const [comment, setComment] = useState("")
   const [recordDate, setRecordDate] = useState("")
@@ -41,90 +65,47 @@ function App() {
           ...doc.data()
         }))
         setRecords(list)
-      }
+      },
+      () => setError("Не удалось загрузить записи. Проверьте подключение и права доступа.")
     )
     return () => unsub()
   }, [])
 
-  // =========================================
-  // АВТООЧИСТКА КОРЗИНЫ (Старше 30 дней)
-  // =========================================
-  useEffect(() => {
-    if (records.length === 0) return
-
-    const DAYS_TO_KEEP = 30
-    const now = Date.now()
-
-    records.forEach(async (item) => {
-      if (item.deleted && item.deletedAt) {
-        const deletedTime = new Date(item.deletedAt).getTime()
-        const diffInDays = (now - deletedTime) / (1000 * 60 * 60 * 24)
-
-        if (diffInDays >= DAYS_TO_KEEP) {
-          await deleteDoc(doc(db, "records", item.id))
-        }
-      }
-    })
-  }, [records])
+  // Автоматическое безвозвратное удаление из браузера отключено ради сохранности записей.
+  // Для истории действий отдельный 30-дневный срок будет настроен в Firebase.
 
   // =========================================
   // ADD / SAVE
   // =========================================
   async function addOrSaveRecord() {
-    if (!amount) return
-
-    let finalType = operation
-
-    if (category === "Закуп") {
-      finalType = "+"
-    }
-    if (category === "Выручка") {
-      finalType = "-"
-    }
-
-    // EDIT
-    if (editingId) {
-      const currentItem = records.find(r => r.id === editingId)
-
-      await updateDoc(
-        doc(db, "records", editingId),
-        {
-          amount: Number(amount),
-          comment,
-          category,
-          type: finalType,
-          date:
-            recordDate !== ""
-              ? recordDate
-              : currentItem?.date ?? "",
-          time: currentItem?.time || new Date().toLocaleTimeString(),
-          active: currentItem?.hasOwnProperty('active') ? currentItem.active : true
-        }
-      )
-      setEditingId(null)
-    }
-    // ADD
-    else {
-      await addDoc(
-        collection(db, "records"),
-        {
-          amount: Number(amount),
-          comment,
-          category,
-          type: finalType,
-          date:
-            recordDate ||
-            new Date().toISOString().split("T")[0],
+    if (amount === "" || !Number.isFinite(Number(amount))) return
+    await runAction(async () => {
+      let finalType = operation
+      if (category === "Закуп") finalType = "+"
+      if (category === "Выручка") finalType = "-"
+      if (editingId) {
+        const currentItem = records.find(r => r.id === editingId)
+        if (!currentItem) throw new Error("Запись не найдена.")
+        if (!canModify(currentItem)) throw new Error("Эту запись нельзя изменить.")
+        await updateRecordWithHistory(editingId, {
+          amount: Number(amount), comment, category, type: finalType,
+          date: recordDate !== "" ? recordDate : currentItem.date ?? "",
+          time: currentItem.time || new Date().toLocaleTimeString(),
+          active: Object.prototype.hasOwnProperty.call(currentItem, "active") ? currentItem.active : true,
+        }, "edit")
+        setEditingId(null)
+      } else {
+        await addRecordWithHistory({
+          amount: Number(amount), comment, category, type: finalType,
+          date: recordDate || localDate(),
           time: new Date().toLocaleTimeString(),
-          active: true,
-          deleted: false
-        }
-      )
-    }
-
-    setAmount("")
-    setComment("")
-    setRecordDate("")
+          active: true, deleted: false,
+        })
+      }
+      setAmount("")
+      setComment("")
+      setRecordDate("")
+    })
   }
 
   // =========================================
@@ -132,46 +113,51 @@ function App() {
   // =========================================
   async function confirmDelete() {
     if (!deletingId) return
-    await updateDoc(doc(db, "records", deletingId), {
-      deleted: true,
-      deletedAt: new Date().toISOString() // Сохраняем дату отправки в корзину
+    const item = records.find(r => r.id === deletingId)
+    if (!item || !canModify(item)) return
+    await runAction(async () => {
+      await updateRecordWithHistory(deletingId, {
+        deleted: true,
+        deletedAt: new Date().toISOString(),
+      }, "trash")
+      setDeletingId(null)
     })
-    setDeletingId(null)
   }
 
   // =========================================
   // RESTORE (Восстановление из корзины)
   // =========================================
   async function restoreRecord(id) {
-    await updateDoc(doc(db, "records", id), {
+    if (!isOwner) return
+    await runAction(() => updateRecordWithHistory(id, {
       deleted: false,
-      deletedAt: null
-    })
+      deletedAt: null,
+    }, "restore"))
   }
 
   // =========================================
   // HARD DELETE (Окончательное ручное удаление)
   // =========================================
   async function hardDeleteRecord(id) {
-    await deleteDoc(doc(db, "records", id))
+    if (!isOwner) return
+    await runAction(() => permanentlyDeleteWithHistory(id))
   }
 
   // =========================================
   // TOGGLE
   // =========================================
   async function toggleRecord(item) {
-    await updateDoc(
-      doc(db, "records", item.id),
-      {
-        active: !item.active
-      }
-    )
+    if (!canModify(item)) return
+    await runAction(() => updateRecordWithHistory(item.id, {
+      active: !item.active,
+    }, item.active ? "disable" : "enable"))
   }
 
   // =========================================
   // EDIT
   // =========================================
   function editRecord(item) {
+    if (!canModify(item)) return
     setEditingId(item.id)
     setAmount(item.amount.toString())
     setComment(item.comment || "")
@@ -243,6 +229,20 @@ function App() {
         {/* TITLE */}
         <h1 className="text-3xl md:text-5xl font-black mb-2">KASSA SYSTEM</h1>
         <p className="text-zinc-400 mb-6">Cloud Cash Manager</p>
+        <div className="flex items-center justify-between gap-3 mb-3 text-sm text-zinc-400">
+          <span>Пользователь: {currentEmployee?.name || "Неизвестный"}</span>
+          <button onClick={() => signOut(auth)} className="underline hover:text-white">Выйти</button>
+        </div>
+        {error && <div role="alert" className="text-red-400 mb-3 text-sm">{error}</div>}
+        {isOwner && (
+          <div className="mb-4">
+            <button type="button" onClick={() => setShowHistory(!showHistory)}
+              className="bg-zinc-900 border border-zinc-800 px-5 py-3 rounded-2xl font-bold">
+              {showHistory ? "Скрыть историю" : "📋 История сотрудников"}
+            </button>
+            {showHistory && <AuditHistory />}
+          </div>
+        )}
 
         {/* TABS & FILTER */}
         <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6">
@@ -257,16 +257,14 @@ function App() {
             >
               📋 Записи ({activeRecords.length})
             </button>
+            {isOwner && (
             <button
               onClick={() => setViewMode("trash")}
-              className={`px-5 py-3 rounded-xl font-bold transition-all ${
-                viewMode === "trash"
-                  ? "bg-red-500 text-white"
-                  : "text-zinc-400 hover:text-white"
-              }`}
+              className={`px-5 py-3 rounded-xl font-bold transition-all ${viewMode === "trash" ? "bg-red-500 text-white" : "text-zinc-400 hover:text-white"}`}
             >
               🗑️ Корзина ({trashRecords.length})
             </button>
+            )}
           </div>
 
           <select
@@ -351,6 +349,7 @@ function App() {
             </select>
 
             <button
+              disabled={busy}
               onClick={addOrSaveRecord}
               className="bg-white text-black rounded-2xl font-black py-4"
             >
@@ -399,7 +398,7 @@ function App() {
 
                 <div className="flex gap-2">
                   {viewMode === "active" ? (
-                    <>
+                    canModify(item) ? <>
                       <button
                         onClick={() => editRecord(item)}
                         className="bg-blue-500 px-3 py-1 rounded-xl"
@@ -420,7 +419,7 @@ function App() {
                       >
                         X
                       </button>
-                    </>
+                    </> : <span className="text-xs text-zinc-500">Только просмотр</span>
                   ) : (
                     <>
                       <button
@@ -479,7 +478,7 @@ function App() {
               </div>
             )}
 
-            <p className="text-zinc-400 text-sm mb-6">Запись будет храниться в корзине 30 дней, после чего удалится автоматически.</p>
+            <p className="text-zinc-400 text-sm mb-6">Запись останется в корзине, пока владелец не удалит её окончательно.</p>
             
             <div className="flex gap-3">
               <button
