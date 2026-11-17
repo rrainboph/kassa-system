@@ -9,6 +9,77 @@ import {
   permanentlyDeleteWithHistory,
 } from "./recordHistory"
 
+// Расчёт по бумажному учёту кассы:
+// 20000 + Закуп - Выручка + Расход(+) - Расход(-).
+// Считаем в сотых долях денежной единицы, чтобы избежать ошибок с дробями.
+const BASE_CASH = 20000
+const UNITS = 100
+
+function parsePositiveAmount(raw) {
+  const cleaned = typeof raw === 'string' ? raw.trim().replace(',', '.') : raw
+  if (cleaned === '' || cleaned === null || cleaned === undefined) {
+    throw new Error('Введите сумму.')
+  }
+  const number = Number(cleaned)
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new Error('Сумма должна быть больше нуля.')
+  }
+  const units = Math.round(number * UNITS)
+  if (!Number.isSafeInteger(units) || Math.abs(number * UNITS - units) > 1e-7) {
+    throw new Error('Укажите сумму не более чем с двумя знаками после запятой.')
+  }
+  return units / UNITS
+}
+
+// В старых документах Firestore сумма иногда может быть сохранена строкой.
+function recordAmountToUnits(raw) {
+  if (raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '')) {
+    return null
+  }
+  if (typeof raw !== 'number' && typeof raw !== 'string') return null
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < 0) return null
+  const units = Math.round(value * UNITS)
+  if (!Number.isSafeInteger(units) || Math.abs(value * UNITS - units) > 1e-7) return null
+  return units
+}
+
+function isRecordEnabled(item) {
+  // Старые документы могли не иметь свойства active: отсутствие означает ON.
+  return item.active !== false
+}
+
+function calculateCashTotals(records) {
+  let buy = 0
+  let revenue = 0
+  let expensePlus = 0
+  let expenseMinus = 0
+  let invalidCount = 0
+
+  for (const item of records) {
+    if (item.deleted || !isRecordEnabled(item)) continue
+    const units = recordAmountToUnits(item.amount)
+    if (units === null) {
+      invalidCount += 1
+      continue
+    }
+    if (item.category === 'Закуп') buy += units
+    else if (item.category === 'Выручка') revenue += units
+    else if (item.category === 'Расход' && item.type === '+') expensePlus += units
+    else if (item.category === 'Расход' && item.type === '-') expenseMinus += units
+    else invalidCount += 1
+  }
+
+  return {
+    totalBuy: buy / UNITS,
+    totalProfit: revenue / UNITS,
+    totalExpensePlus: expensePlus / UNITS,
+    totalExpenseMinus: expenseMinus / UNITS,
+    finalTotal: (BASE_CASH * UNITS + buy - revenue + expensePlus - expenseMinus) / UNITS,
+    invalidCount,
+  }
+}
+
 function App({ currentEmployee }) {
   const isOwner = currentEmployee?.role === "owner"
   const [showHistory, setShowHistory] = useState(false)
@@ -78,7 +149,13 @@ function App({ currentEmployee }) {
   // ADD / SAVE
   // =========================================
   async function addOrSaveRecord() {
-    if (amount === "" || !Number.isFinite(Number(amount))) return
+    let parsedAmount
+    try {
+      parsedAmount = parsePositiveAmount(amount)
+    } catch (err) {
+      setError(err.message)
+      return
+    }
     await runAction(async () => {
       let finalType = operation
       if (category === "Закуп") finalType = "+"
@@ -88,7 +165,7 @@ function App({ currentEmployee }) {
         if (!currentItem) throw new Error("Запись не найдена.")
         if (!canModify(currentItem)) throw new Error("Эту запись нельзя изменить.")
         await updateRecordWithHistory(editingId, {
-          amount: Number(amount), comment, category, type: finalType,
+          amount: parsedAmount, comment, category, type: finalType,
           date: recordDate !== "" ? recordDate : currentItem.date ?? "",
           time: currentItem.time || new Date().toLocaleTimeString(),
           active: Object.prototype.hasOwnProperty.call(currentItem, "active") ? currentItem.active : true,
@@ -96,7 +173,7 @@ function App({ currentEmployee }) {
         setEditingId(null)
       } else {
         await addRecordWithHistory({
-          amount: Number(amount), comment, category, type: finalType,
+          amount: parsedAmount, comment, category, type: finalType,
           date: recordDate || localDate(),
           time: new Date().toLocaleTimeString(),
           active: true, deleted: false,
@@ -149,8 +226,8 @@ function App({ currentEmployee }) {
   async function toggleRecord(item) {
     if (!canModify(item)) return
     await runAction(() => updateRecordWithHistory(item.id, {
-      active: !item.active,
-    }, item.active ? "disable" : "enable"))
+      active: !isRecordEnabled(item),
+    }, isRecordEnabled(item) ? "disable" : "enable"))
   }
 
   // =========================================
@@ -159,7 +236,7 @@ function App({ currentEmployee }) {
   function editRecord(item) {
     if (!canModify(item)) return
     setEditingId(item.id)
-    setAmount(item.amount.toString())
+    setAmount(String(item.amount ?? ""))
     setComment(item.comment || "")
     setCategory(item.category)
     setOperation(item.type)
@@ -187,37 +264,14 @@ function App({ currentEmployee }) {
   // =========================================
   // TOTALS
   // =========================================
-  let totalBuy = 0
-  let totalProfit = 0
-  let totalExpensePlus = 0
-  let totalExpenseMinus = 0
-
-  activeRecords.forEach(item => {
-    if (!item.active) return
-
-    if (item.category === "Закуп") {
-      totalBuy += item.amount
-    }
-    else if (item.category === "Выручка") {
-      totalProfit += item.amount
-    }
-    else if (item.category === "Расход") {
-      if (item.type === "+") {
-        totalExpensePlus += item.amount
-      } else {
-        totalExpenseMinus += item.amount
-      }
-    }
-  })
-
-  const BASE_CASH = 20000
-
-  const finalTotal =
-    BASE_CASH
-    + totalBuy
-    - totalProfit
-    + totalExpensePlus
-    - totalExpenseMinus
+  const {
+    totalBuy,
+    totalProfit,
+    totalExpensePlus,
+    totalExpenseMinus,
+    finalTotal,
+    invalidCount,
+  } = calculateCashTotals(records)
 
   // Поиск конкретной записи, выбранной для удаления
   const recordToDelete = records.find(r => r.id === deletingId)
@@ -234,6 +288,12 @@ function App({ currentEmployee }) {
           <button onClick={() => signOut(auth)} className="underline hover:text-white">Выйти</button>
         </div>
         {error && <div role="alert" className="text-red-400 mb-3 text-sm">{error}</div>}
+        {invalidCount > 0 && (
+          <div role="alert" className="text-amber-300 mb-3 text-sm">
+            Внимание: {invalidCount} записей с неверной суммой, категорией или знаком не вошли в итог.
+            Проверьте их перед сверкой кассы.
+          </div>
+        )}
         {isOwner && (
           <div className="mb-4">
             <button type="button" onClick={() => setShowHistory(!showHistory)}
@@ -307,6 +367,7 @@ function App({ currentEmployee }) {
           <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
             <input
               type="number"
+              step="0.01" min="0.01"
               placeholder="Сумма"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -376,9 +437,9 @@ function App({ currentEmployee }) {
             {filteredRecords.map(item => (
               <div
                 key={item.id}
-                className={`grid grid-cols-6 p-4 border-t border-zinc-800 ${!item.active ? "opacity-40" : ""}`}
+                className={`grid grid-cols-6 p-4 border-t border-zinc-800 ${!isRecordEnabled(item) ? "opacity-40" : ""}`}
               >
-                <div className={!item.active ? "line-through" : ""}>
+                <div className={!isRecordEnabled(item) ? "line-through" : ""}>
                   {item.comment}
                 </div>
                 <div>{item.category}</div>
@@ -410,7 +471,7 @@ function App({ currentEmployee }) {
                         onClick={() => toggleRecord(item)}
                         className="bg-yellow-400 text-black px-3 py-1 rounded-xl"
                       >
-                        {item.active ? "OFF" : "ON"}
+                        {isRecordEnabled(item) ? "OFF" : "ON"}
                       </button>
 
                       <button
